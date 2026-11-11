@@ -24,6 +24,7 @@ jobs:
       - name: Set up Flutter
         uses: subosito/flutter-action@v2
         with:
+          flutter-version: '3.35.x'
           channel: 'stable'
           cache: true
 
@@ -56,10 +57,20 @@ jobs:
           for g in glob.glob("android/app/build.gradle*"):
               t = open(g).read().replace("flutter.minSdkVersion", "24")
               open(g, "w").write(t)
-          with open("android/gradle.properties", "a") as f:
-              f.write("\nandroid.newDsl=false\nandroid.builtInKotlin=false\nandroid.enableLegacyVariantApi=true\n")
-          print("patched")
+          agp9 = False
+          for sg in glob.glob("android/settings.gradle*"):
+              if 'com.android.application' in open(sg).read() and 'version "9' in open(sg).read():
+                  agp9 = True
+          if agp9:
+              with open("android/gradle.properties", "a") as f:
+                  f.write("\nandroid.newDsl=false\nandroid.builtInKotlin=false\nandroid.enableLegacyVariantApi=true\n")
+          print("patched, agp9 =", agp9)
           PY
+
+      - name: Show versions
+        run: |
+          flutter --version
+          grep -rn "com.android.application" android/settings.gradle* || true
 
       - name: Install dependencies
         run: flutter pub get
@@ -78,4 +89,3 @@ jobs:
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
-          
