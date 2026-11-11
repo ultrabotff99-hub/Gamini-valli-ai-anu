@@ -29,24 +29,44 @@ jobs:
 
       - name: Arrange files (works for flat or folder upload)
         run: |
-          mkdir -p lib tools
+          mkdir -p lib
           if [ -f main.dart ]; then cp main.dart lib/main.dart; fi
-          if [ -f patch_android.py ]; then cp patch_android.py tools/patch_android.py; fi
 
       - name: Initialize Android Project Structure
         run: flutter create . --project-name=ai_girlfriend --org=com.aigf --platforms=android
 
-      - name: Add permissions and min SDK
+      - name: Permissions, min SDK and Gradle fix
         run: |
-          if [ -f tools/patch_android.py ]; then python3 tools/patch_android.py; fi
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/g' android/app/build.gradle || true
+          python3 - <<'PY'
+          import glob
+          p = "android/app/src/main/AndroidManifest.xml"
+          s = open(p).read()
+          if "RECORD_AUDIO" not in s:
+              perms = '''<uses-permission android:name="android.permission.INTERNET"/>
+              <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+              <uses-permission android:name="android.permission.BLUETOOTH"/>
+              <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+              <queries>
+                  <intent><action android:name="android.intent.action.TTS_SERVICE"/></intent>
+                  <intent><action android:name="android.speech.RecognitionService"/></intent>
+              </queries>
+              <application'''
+              s = s.replace("<application", perms, 1)
+              open(p, "w").write(s)
+          for g in glob.glob("android/app/build.gradle*"):
+              t = open(g).read().replace("flutter.minSdkVersion", "24")
+              open(g, "w").write(t)
+          with open("android/gradle.properties", "a") as f:
+              f.write("\nandroid.newDsl=false\nandroid.builtInKotlin=false\nandroid.enableLegacyVariantApi=true\n")
+          print("patched")
+          PY
 
       - name: Install dependencies
         run: flutter pub get
 
       - name: Build APK (Release, auto retry)
         run: |
-          for i in 1 2 3; do
+          for i in 1 2; do
             flutter build apk --release && exit 0
             echo "Attempt $i failed, retrying in 20s..."
             sleep 20
@@ -58,3 +78,4 @@ jobs:
         with:
           name: app-release
           path: build/app/outputs/flutter-apk/app-release.apk
+          
