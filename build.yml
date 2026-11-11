@@ -1,0 +1,60 @@
+name: Build Android APK
+
+on:
+  push:
+    branches: [ main, master ]
+  pull_request:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'zulu'
+          java-version: '17'
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Arrange files (works for flat or folder upload)
+        run: |
+          mkdir -p lib tools
+          if [ -f main.dart ]; then cp main.dart lib/main.dart; fi
+          if [ -f patch_android.py ]; then cp patch_android.py tools/patch_android.py; fi
+
+      - name: Initialize Android Project Structure
+        run: flutter create . --project-name=ai_girlfriend --org=com.aigf --platforms=android
+
+      - name: Add permissions and min SDK
+        run: |
+          if [ -f tools/patch_android.py ]; then python3 tools/patch_android.py; fi
+          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/g' android/app/build.gradle || true
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build APK (Release, auto retry)
+        run: |
+          for i in 1 2 3; do
+            flutter build apk --release && exit 0
+            echo "Attempt $i failed, retrying in 20s..."
+            sleep 20
+          done
+          exit 1
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-release
+          path: build/app/outputs/flutter-apk/app-release.apk
